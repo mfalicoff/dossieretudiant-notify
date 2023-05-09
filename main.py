@@ -48,10 +48,6 @@ def save_file(blob: bytes) -> None:
         writer.write(file)
 
 def send_email(file_content: bytes) -> None:
-    s = smtplib.SMTP()
-    s.connect("smtp.polymtl.ca", 587)
-    s.ehlo()
-
     message = MIMEMultipart()
     message["Subject"] = "[POLYMTL] Changements sur le bulletin"
     message["From"] = os.environ["DOSSIER_SENDER_EMAIL"]
@@ -76,8 +72,12 @@ def send_email(file_content: bytes) -> None:
     )
     message.attach(part)
     text = message.as_string()
-
-    s.sendmail(os.environ["DOSSIER_SENDER_EMAIL"], os.environ["DOSSIER_TO_EMAIL"], text)
+    with smtplib.SMTP(os.environ["DOSSIER_EMAIL_SERVER"], int(os.environ["DOSSIER_EMAIL_PORT"])) as s:
+        s.ehlo()
+        s.starttls()
+        s.ehlo()
+        s.login(os.environ["DOSSIER_EMAIL_USERNAME"], os.environ["DOSSIER_EMAIL_PASSWORD"])
+        s.sendmail(os.environ["DOSSIER_SENDER_EMAIL"], os.environ["DOSSIER_TO_EMAIL"], text)
     
 
 def main() -> None:
@@ -137,9 +137,9 @@ def main() -> None:
         # File doesn't exist, save it. Comparison will be done on the next run
         print("First time seeing the report.pdf, saving...")
         save_file(report)
-        
 
 if __name__ == "__main__":
+    print("Starting job!")
     scheduler = BlockingScheduler()
     scheduler.add_job(main, 'interval', minutes=10)
     scheduler.start()
