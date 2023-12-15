@@ -1,0 +1,7 @@
+services:
+  polynotify:
+    image: mazil007/mf-polynotify
+    volumes:
+      - ./logs:/app/logs
+      - .env:/app/.env
+      - ./reports:/app/reports/

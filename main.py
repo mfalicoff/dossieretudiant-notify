@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import io
@@ -21,6 +22,9 @@ load_dotenv()
 
 regex = re.compile("[\s\n\r:,]")
 
+logging.basicConfig(filename='logs/log.log', level=logging.INFO,
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 def compute_hash(blob: bytes) -> str:
     stream = io.BytesIO()
     stream.write(blob)
@@ -30,9 +34,10 @@ def compute_hash(blob: bytes) -> str:
     for page in reader.pages:
         text += page.extract_text()
     hasher = hashlib.sha256()
-    hasher.update(regex.sub("",text).lower().encode("utf-8"))
-    
+    hasher.update(regex.sub("", text).lower().encode("utf-8"))
+
     return hasher.hexdigest()
+
 
 def save_file(blob: bytes) -> None:
     stream = io.BytesIO()
@@ -44,8 +49,9 @@ def save_file(blob: bytes) -> None:
     for page in reader.pages:
         writer.add_page(page)
 
-    with open("report.pdf", "wb") as file:
+    with open("reports/report.pdf", "wb") as file:
         writer.write(file)
+
 
 def send_email(file_content: bytes) -> None:
     message = MIMEMultipart()
@@ -78,7 +84,7 @@ def send_email(file_content: bytes) -> None:
         s.ehlo()
         s.login(os.environ["DOSSIER_EMAIL_USERNAME"], os.environ["DOSSIER_EMAIL_PASSWORD"])
         s.sendmail(os.environ["DOSSIER_SENDER_EMAIL"], os.environ["DOSSIER_TO_EMAIL"], text)
-    
+
 
 def main() -> None:
     data = {
@@ -88,7 +94,7 @@ def main() -> None:
     }
     headers = default_headers()
     headers.update({
-        "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.88 Safari/537.36"
     })
 
     s = requests.Session()
@@ -97,49 +103,51 @@ def main() -> None:
     loginPage = ""
 
     if rlogin.status_code != 200:
-        print(f"Invalid response: {rlogin.status_code}")
-    
-    print("Connected to dossieretudiant")
+        logging.info(f"Invalid response: {rlogin.status_code}")
+
+    logging.info("Connected to dossieretudiant")
     loginPage = rlogin.text
 
     soup = BeautifulSoup(loginPage, "html.parser")
     pdfRequest = {}
 
-    for element in soup.form.find_all("input", attrs={"type":"hidden"}):
+    for element in soup.form.find_all("input", attrs={"type": "hidden"}):
         pdfRequest[element.attrs["name"]] = element.attrs["value"]
 
-    rreport = s.post("https://dossieretudiant.polymtl.ca/WebEtudiant7/AfficheBulletinServlet", data=pdfRequest, headers=headers)
+    rreport = s.post("https://dossieretudiant.polymtl.ca/WebEtudiant7/AfficheBulletinServlet", data=pdfRequest,
+                     headers=headers)
 
     if rreport.status_code != 200:
-        print("Invalid response code PDF")
+        logging.info("Invalid response code PDF")
         return
-    
-    report = rreport.content
-    print("Report card fetched from dossier etudiant.")
 
-    current_file = Path("report.pdf")
+    report = rreport.content
+    logging.info("Report card fetched from dossier etudiant.")
+
+    current_file = Path("reports/report.pdf")
 
     rdigest = compute_hash(report)
 
     if current_file.is_file():
         # File was already saved, compare the received data with the current file
-        with open("report.pdf", "rb") as file:
+        with open("reports/report.pdf", "rb") as file:
             current_digest = compute_hash(file.read())
-            
+
         if rdigest == current_digest:
-            print("No new changes detected")
+            logging.info("No new changes detected")
         else:
             # Save the new file to disk
             save_file(report)
-            print("Detected new changes, sending email with attachment")
+            logging.info("Detected new changes, sending email with attachment")
             send_email(report)
     else:
         # File doesn't exist, save it. Comparison will be done on the next run
-        print("First time seeing the report.pdf, saving...")
+        logging.info("First time seeing the report.pdf, saving...")
         save_file(report)
 
+
 if __name__ == "__main__":
-    print("Starting job!")
+    logging.info("Starting job!")
     scheduler = BlockingScheduler()
     scheduler.add_job(main, 'interval', minutes=10)
     scheduler.start()
